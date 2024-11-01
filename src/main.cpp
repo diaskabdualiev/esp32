@@ -27,15 +27,58 @@ UserAuth user_auth(API_KEY, USER_EMAIL, USER_PASSWORD);
 FirebaseApp app;
 WiFiClientSecure ssl_client1, ssl_client2;
 using AsyncClient = AsyncClientClass;
-AsyncClient aClient(ssl_client1, getNetwork(network)), aClient2(ssl_client2, getNetwork(network));
+AsyncClient aClient1(ssl_client1, getNetwork(network)), aClient2(ssl_client2, getNetwork(network));
 RealtimeDatabase Database;
 bool taskComplete = false;
+bool firstInit = false;
 unsigned long ms = 0;
 
 LiquidCrystal_I2C lcd(PCF8574_ADDR_A21_A11_A01, 4, 5, 6, 16, 11, 12, 13, 14, POSITIVE);
 
 String deviceID;
 
+object_t createInitVaraibles(){
+  JsonWriter writer;
+  object_t acc, json;
+  object_t pr1, pr2, pr3, pr4, pr5, pr6, pr7, prices;
+  object_t nm1, nm2, nm3, nm4, nm5, nm6, nm7, names;
+  object_t tk1, tk2, tk3, tk4, tk5, tk6, tk7, tanks;
+
+  writer.create(acc, "account", 5000);
+
+  writer.create(pr1, "price1", 55);
+  writer.create(pr2, "price2", 55);
+  writer.create(pr3, "price3", 55);
+  writer.create(pr4, "price4", 55);
+  writer.create(pr5, "price5", 55);
+  writer.create(pr6, "price6", 55);
+  writer.create(pr7, "price7", 55);
+  writer.join(prices, 7, pr1, pr2, pr3, pr4, pr5, pr6, pr7);
+  writer.create(prices, "prices", prices);
+
+  writer.create(nm1, "name1", "Adk");
+  writer.create(nm2, "name2", "Sem");
+  writer.create(nm3, "name3", "Dis");
+  writer.create(nm4, "name4", "Nur");
+  writer.create(nm5, "name5", "Loa");
+  writer.create(nm6, "name6", "Iha");
+  writer.create(nm7, "name7", "Gbh");
+  writer.join(names, 7, nm1, nm2, nm3, nm4, nm5, nm6, nm7);
+  writer.create(names, "names", names);  
+
+  writer.create(tk1, "tank1", 2);
+  writer.create(tk2, "tank2", 3);
+  writer.create(tk3, "tank3", 1);
+  writer.create(tk4, "tank4", 4);
+  writer.create(tk5, "tank5", 2);
+  writer.create(tk6, "tank6", 1);
+  writer.create(tk7, "tank7", 3);
+  writer.join(tanks, 7, tk1, tk2, tk3, tk4, tk5, tk6, tk7);
+  writer.create(tanks, "tanks", tanks);
+  writer.join(json, 4, prices, names, tanks, acc);
+  writer.create(json, deviceID, json);
+  return json;
+}
 
 void displayScrollingText(const char* text, uint8_t row)
 {
@@ -125,7 +168,7 @@ void setup()
     Serial.println("Initializing app...");
     ssl_client1.setInsecure();
     ssl_client2.setInsecure();
-    initializeApp(aClient, app, getAuth(user_auth), asyncCB, "authTask");
+    initializeApp(aClient1, app, getAuth(user_auth), asyncCB, "authTask");
 
     // Binding the FirebaseApp for authentication handler.
     // To unbind, use Database.resetApp();
@@ -133,26 +176,31 @@ void setup()
     initializeApp(aClient2, app, getAuth(user_auth), asyncCB, "authTask");
     Database.url(DATABASE_URL);
     Database.setSSEFilters("get,put,patch,keep-alive,cancel,auth_revoked");
-    Database.get(aClient, "/test/stream", asyncCB, true /* SSE mode (HTTP Streaming) */, "streamTask");
+    Database.get(aClient2, "/"+deviceID, asyncCB, true /* SSE mode (HTTP Streaming) */, "streamTask");
 
 }
 
 void loop()
 {
-    // The async task handler should run inside the main loop
-    // without blocking delay or bypassing with millis code blocks.
-    app.loop();
-    Database.loop();
+  // The async task handler should run inside the main loop
+  // without blocking delay or bypassing with millis code blocks.
+  app.loop();
+  Database.loop();
 
-    if (app.ready() && !taskComplete)
-    {
-        taskComplete = true;
+  if (app.ready() && !taskComplete){
+    Database.get(aClient2, "/" + deviceID + "/account", asyncCB, false, "getInitInfo");
+    taskComplete = true;
+  }
 
-        Database.get(aClient, "/" + deviceID, asyncCB, false, "getInitInfo");
+  if(app.ready() && firstInit){
+    Database.set<object_t>(aClient2, "/", createInitVaraibles(), asyncCB, "setInitInfo");
+    lcd.setCursor(0, 3);
+    lcd.print("firstInit");
+    firstInit = false;
+  }
 
-        Database.get(aClient, "/test/string", asyncCB, false, "getTask2");
-        
-    }
+  
+
 }
 
 void asyncCB(AsyncResult &aResult)
@@ -198,12 +246,25 @@ void printResult(AsyncResult &aResult)
             float v3 = RTDB.to<float>();
             double v4 = RTDB.to<double>();
             String v5 = RTDB.to<String>();
-            
+            String payload = RTDB.dataPath().c_str();
+            payload.trim();
+            if(payload == "/account"){
+              lcd.setCursor(8, 1);
+              lcd.print(RTDB.to<const char *>());
+            }
         }
         else
         {
             Serial.println("----------------------------");
             Firebase.printf("task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
+            String payload = aResult.c_str();
+            payload.trim();   
+            if(aResult.uid() == "getInitInfo" && payload == "null"){
+              firstInit = true;
+            }else if(aResult.uid() == "getInitInfo"){
+              lcd.setCursor(8, 1);
+              lcd.print(payload);
+            }
         }
 
 #if defined(ESP32) || defined(ESP8266)
@@ -213,3 +274,5 @@ void printResult(AsyncResult &aResult)
 #endif
     }
 }
+
+
