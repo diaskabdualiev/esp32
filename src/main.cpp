@@ -30,13 +30,13 @@ struct Prices {
 };
 
 struct Tanks {
-  int tank1;
-  int tank2;
-  int tank3;
-  int tank4;
-  int tank5;
-  int tank6;
-  int tank7;
+  float tank1;
+  float tank2;
+  float tank3;
+  float tank4;
+  float tank5;
+  float tank6;
+  float tank7;
 };
 Names names;
 Prices prices;
@@ -48,6 +48,14 @@ WiFiClientSecure ssl_client1, ssl_client2;
 using AsyncClient = AsyncClientClass;
 AsyncClient aClient1(ssl_client1, getNetwork(network)), aClient2(ssl_client2, getNetwork(network));
 RealtimeDatabase Database;
+
+int valuePot1 = 0;
+int valuePot2 = 0;
+int valuePot3 = 0;
+int valuePot4 = 0;
+int valuePot5 = 0;
+int valuePot6 = 0;
+int valuePot7 = 0;
 
 bool taskComplete = false;
 bool firstInit = false;
@@ -64,11 +72,14 @@ void beepBuzzer();
 void handleButtonClick(uint8_t pin);
 void displayScrollingText(const char* text, uint8_t row);
 object_t createInitVaraibles();
+object_t createPotJson();
 void printAccount(String account);
 void getAllNameAndPrice(String jsonString);
 void buttonLoop(unsigned long currentMillis);
-void printNameAndPrice(String name, int prices);
-
+void potLoop(unsigned long currentMillis);
+void printNameAndPrice(String name, int prices, float potvalue);
+void POTinit();
+void LEDinit();
 PCF8575 pcf8575(PCF8575_ADDRESS);
 
 const uint8_t buttonPins[] = {
@@ -86,7 +97,12 @@ bool buzzerOn = false;
 unsigned long lastButtonCheckTime = 0;
 const unsigned long buttonCheckInterval = 50;
 
-void LEDinit();
+unsigned long lastPotCheck = 0;
+unsigned long lastCountCheck = 0;
+unsigned long lastPotSendCheck = 0;
+unsigned long count = 0;
+
+int account = 0;
 
 void setup()
 {
@@ -102,7 +118,7 @@ void setup()
     lcd.clear();
 
     LEDinit();
-
+    POTinit();
     lcd.setCursor(0, 0);
     lcd.print("Connecting to WiFi");
     displayScrollingText(WIFI_SSID, 1);
@@ -140,6 +156,8 @@ void setup()
     lcd.clear();
     Serial.println(deviceID);
 
+
+
     lcd.setCursor(0, 0);
     lcd.print("Firebase Client");
     lcd.setCursor(0, 1);
@@ -148,9 +166,9 @@ void setup()
     delay(2000);
     lcd.clear();
 
+    // lcd.setCursor(0, 0);
+    // lcd.print("+7 702 313 20 61");
     lcd.setCursor(0, 0);
-    lcd.print("+7 702 313 20 61");
-    lcd.setCursor(0, 1);
     lcd.print("Balance:");
 
     for (uint8_t i = 0; i < numButtons; i++) {
@@ -174,7 +192,7 @@ void setup()
     initializeApp(aClient2, app, getAuth(user_auth), asyncCB, "authTask");
     Database.url(DATABASE_URL);
     Database.setSSEFilters("get,put,patch,keep-alive,cancel,auth_revoked");
-    Database.get(aClient2, "/"+deviceID, asyncCB, true /* SSE mode (HTTP Streaming) */, "streamTask");
+    Database.get(aClient1, "/"+deviceID+"/account", asyncCB, true /* SSE mode (HTTP Streaming) */, "streamTask");
 
 }
 
@@ -186,9 +204,10 @@ void loop()
   app.loop();
   Database.loop();
   buttonLoop(currentMillis);
+  potLoop(currentMillis);
 
   if (app.ready() && !taskComplete){
-    Database.get(aClient2, "/"+deviceID + "/account", asyncCB, false, "getInitInfo");
+    Database.get(aClient2, "/"+deviceID, asyncCB, false, "getInitInfo");
     taskComplete = true;
   }
 
@@ -198,6 +217,13 @@ void loop()
     lcd.print("firstInit");
     firstInit = false;
   }
+
+  if(app.ready() && currentMillis - lastCountCheck >= 2000){
+    lastCountCheck = currentMillis;
+    Database.set<int>(aClient2, "/"+deviceID+"/count", count++, asyncCB, "setCountTask");
+    Database.set<object_t>(aClient2, "/"+deviceID+"/tanks", createPotJson(), asyncCB, "setPotJsonTask");
+  }
+
 }
 
 void asyncCB(AsyncResult &aResult)
@@ -246,25 +272,18 @@ void printResult(AsyncResult &aResult)
 
             String payload = RTDB.dataPath().c_str();
             payload.trim();
-            if(payload == "/account"){
+            if(payload == "/"){
               printAccount(RTDB.to<const char *>());
-            }
-            else if(payload == "/"){
-              String data = RTDB.data();
-              getAllNameAndPrice(data);
             }
         }
         else
         {
             Serial.println("----------------------------");
             Firebase.printf("task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
-            String payload = aResult.c_str();
-            payload.trim();   
-            if(aResult.uid() == "getInitInfo" && payload == "null"){
-              firstInit = true;
-            }else if(aResult.uid() == "getInitInfo"){
-              lcd.setCursor(8, 1);
-              lcd.print(payload);
+            String task = aResult.uid().c_str();
+            task.trim();
+            if(task == "getInitInfo"){
+              getAllNameAndPrice(RTDB.data());
             }
         }
 
@@ -319,6 +338,21 @@ object_t createInitVaraibles(){
   return json;
 }
 
+object_t createPotJson(){
+  JsonWriter writer;
+  object_t tk1, tk2, tk3, tk4, tk5, tk6, tk7, tan;
+  writer.create(tk1, "tank1", tanks.tank1);
+  writer.create(tk2, "tank2", tanks.tank2);
+  writer.create(tk3, "tank3", tanks.tank3);
+  writer.create(tk4, "tank4", tanks.tank4);
+  writer.create(tk5, "tank5", tanks.tank5);
+  writer.create(tk6, "tank6", tanks.tank6);
+  writer.create(tk7, "tank7", tanks.tank7);
+  writer.join(tan, 7, tk1, tk2, tk3, tk4, tk5, tk6, tk7);
+  // writer.create(tan, "tanks", tan);
+  return tan;
+}
+
 void displayScrollingText(const char* text, uint8_t row)
 {
     size_t len = strlen(text);
@@ -344,38 +378,37 @@ void handleButtonClick(uint8_t pin)
 
   if (pin == BUTTON1) {
     Serial.println("Клик на BUTTON1");
-    printNameAndPrice(names.name1, prices.price1);
+    printNameAndPrice(names.name1, prices.price1, tanks.tank1);
     currentSelect = 1;
-    digitalWrite(LED1, HIGH);
   }
   else if (pin == BUTTON2) {
     Serial.println("Клик на BUTTON2");
-    printNameAndPrice(names.name2, prices.price2);
+    printNameAndPrice(names.name2, prices.price2, tanks.tank2);
     currentSelect = 2;
   }
   else if (pin == BUTTON3) {
     Serial.println("Клик на BUTTON3");
-    printNameAndPrice(names.name3, prices.price3);
+    printNameAndPrice(names.name3, prices.price3, tanks.tank3);
     currentSelect = 3;
   }
   else if (pin == BUTTON4) {
     Serial.println("Клик на BUTTON4");
-    printNameAndPrice(names.name4, prices.price4);
+    printNameAndPrice(names.name4, prices.price4, tanks.tank4);
     currentSelect = 4;
   }
   else if (pin == BUTTON5) {
     Serial.println("Клик на BUTTON5");
-    printNameAndPrice(names.name5, prices.price5);
+    printNameAndPrice(names.name5, prices.price5, tanks.tank5);
     currentSelect = 5;
   }
   else if (pin == BUTTON6) {
     Serial.println("Клик на BUTTON6");
-    printNameAndPrice(names.name6, prices.price6);
+    printNameAndPrice(names.name6, prices.price6, tanks.tank6);
     currentSelect = 6;
   }
   else if (pin == BUTTON7) {
     Serial.println("Клик на BUTTON7");
-    printNameAndPrice(names.name7, prices.price7);
+    printNameAndPrice(names.name7, prices.price7, tanks.tank7);
     currentSelect = 7;
   }
   else if (pin == START_BUTTON) {
@@ -390,21 +423,23 @@ void handleButtonClick(uint8_t pin)
     Serial.print("Клик на неизвестной кнопке P");
     Serial.println(pin);
   }
+  Serial.printf("%f %f %f %f %f %f %f\n", tanks.tank1, tanks.tank2, tanks.tank3, tanks.tank4, tanks.tank5, tanks.tank6, tanks.tank7);
 }
 
 void beepBuzzer()
 {
-  digitalWrite(BUZZER_PIN, HIGH);
+  // digitalWrite(BUZZER_PIN, HIGH);
   buzzerStartTime = millis();
   buzzerOn = true;
 }
 
-void printAccount(String account){
+void printAccount(String account1){
   beepBuzzer();
-  lcd.setCursor(8, 1);
+  lcd.setCursor(8, 0);
   lcd.print("          ");
-  lcd.setCursor(8, 1);
-  lcd.print(account);
+  lcd.setCursor(8, 0);
+  lcd.print(account1);
+  account = account1.toInt();
 }
 
 void getAllNameAndPrice(String jsonString){
@@ -431,7 +466,9 @@ void getAllNameAndPrice(String jsonString){
   json.get(jsonData, "prices/price6"); if (jsonData.success) prices.price6 = jsonData.intValue;
   json.get(jsonData, "prices/price7"); if (jsonData.success) prices.price7 = jsonData.intValue;
 
-    Serial.println("Names:");
+  json.get(jsonData, "account"); if(jsonData.success) printAccount(String(jsonData.intValue));
+
+  Serial.println("Names:");
   Serial.println("  Name1: " + names.name1);
   Serial.println("  Name2: " + names.name2);
   Serial.println("  Name3: " + names.name3);
@@ -502,13 +539,75 @@ void LEDinit(){
   delay(1000);
 }
 
-void printNameAndPrice(String name, int prices){
+void POTinit(){
+  lcd.clear();
+  pinMode(POT1, INPUT);
+  pinMode(POT2, INPUT);
+  pinMode(POT3, INPUT);
+  pinMode(POT4, INPUT);
+  pinMode(POT5, INPUT);
+  pinMode(POT6, INPUT);
+  pinMode(POT7, INPUT);
+  valuePot1 = analogRead(POT1);
+  valuePot2 = analogRead(POT2);
+  valuePot3 = analogRead(POT3);
+  valuePot4 = analogRead(POT4);
+  valuePot5 = analogRead(POT5);
+  valuePot6 = analogRead(POT6);
+  valuePot7 = analogRead(POT7);
+  lcd.setCursor(0,0);
+  lcd.print("1." + String(valuePot1));
+  lcd.setCursor(0,1);
+  lcd.print("2." + String(valuePot2));
+  lcd.setCursor(0,2);
+  lcd.print("3." + String(valuePot3));
+  lcd.setCursor(0,3);
+  lcd.print("4." + String(valuePot4));
+  lcd.setCursor(10,0);
+  lcd.print("5." + String(valuePot5));
+  lcd.setCursor(10,1);
+  lcd.print("6." + String(valuePot6));
+  lcd.setCursor(10,2);
+  lcd.print("7." + String(valuePot7));
+  delay(5000);
+  Serial.printf("%d %d %d %d %d %d %d\n", valuePot1, valuePot2, valuePot3, valuePot4, valuePot5, valuePot6, valuePot7);
+  lcd.clear();
+}
+
+void printNameAndPrice(String name, int prices, float potvalue){
+  lcd.setCursor(0, 1);
+  lcd.print("                    ");
   lcd.setCursor(0, 2);
   lcd.print("                    ");
   lcd.setCursor(0, 3);
   lcd.print("                    ");
-  lcd.setCursor(0, 2);
+  lcd.setCursor(0, 1);
   lcd.print(name);
+  lcd.setCursor(0, 2);
+  lcd.print("Price:"+String(prices)+" t/l");
   lcd.setCursor(0, 3);
-  lcd.print(String(prices)+" tenge");
+  lcd.print("Tank:"+String(potvalue, 2)+" l");
+  Serial.println(String(potvalue, 2));
+}
+
+void potLoop(unsigned long currentMillis){
+  if(currentMillis - lastPotCheck >= 200){
+    lastPotCheck = currentMillis;
+    valuePot1 = analogRead(POT1);
+    valuePot2 = analogRead(POT2);
+    valuePot3 = analogRead(POT3);
+    valuePot4 = analogRead(POT4);
+    valuePot5 = analogRead(POT5);
+    valuePot6 = analogRead(POT6);
+    // valuePot7 = analogRead(POT7);
+    tanks.tank1 = (valuePot1 * 10.0) / 4096.0;
+    tanks.tank2 = (valuePot2 * 10.0) / 4096.0;
+    tanks.tank3 = (valuePot3 * 10.0) / 4096.0;
+    tanks.tank4 = (valuePot4 * 10.0) / 4096.0;
+    tanks.tank5 = (valuePot5 * 10.0) / 4096.0;
+    tanks.tank6 = (valuePot6 * 10.0) / 4096.0;
+    tanks.tank7 = (valuePot7 * 10.0) / 4096.0;
+    
+  }
+  // Serial.printf("%d %d %d %d %d %d %d\n", valuePot1, valuePot2, valuePot3, valuePot4, valuePot5, valuePot6, valuePot7);
 }
