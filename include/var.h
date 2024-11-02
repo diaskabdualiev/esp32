@@ -20,19 +20,19 @@
 
 #define BUZZER_PIN 17
 
-#define LED1 26;
-#define LED2 27;
-#define LED3 14;
-#define LED4 13;
-#define LED5 18;
-#define LED6 23;
-#define LED7 19;
+#define LED1 26
+#define LED2 27
+#define LED3 14
+#define LED4 13
+#define LED5 18
+#define LED6 23
+#define LED7 19
 
-#define POT1 36;
-#define POT2 39;
-#define POT3 34;
-#define POT4 35;
-#define POT5 32;
-#define POT6 33;
-#define POT7 25;
+#define POT1 36
+#define POT2 39
+#define POT3 34
+#define POT4 35
+#define POT5 32
+#define POT6 33
+#define POT7 25
 

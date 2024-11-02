@@ -9,7 +9,38 @@
 #include "var.h"
 #include "PCF8575.h"
 #include "FirebaseJson.h"
+struct Names {
+  String name1;
+  String name2;
+  String name3;
+  String name4;
+  String name5;
+  String name6;
+  String name7;
+};
 
+struct Prices {
+  int price1;
+  int price2;
+  int price3;
+  int price4;
+  int price5;
+  int price6;
+  int price7;
+};
+
+struct Tanks {
+  int tank1;
+  int tank2;
+  int tank3;
+  int tank4;
+  int tank5;
+  int tank6;
+  int tank7;
+};
+Names names;
+Prices prices;
+Tanks tanks;
 DefaultNetwork network;
 UserAuth user_auth(API_KEY, USER_EMAIL, USER_PASSWORD);
 FirebaseApp app;
@@ -17,9 +48,11 @@ WiFiClientSecure ssl_client1, ssl_client2;
 using AsyncClient = AsyncClientClass;
 AsyncClient aClient1(ssl_client1, getNetwork(network)), aClient2(ssl_client2, getNetwork(network));
 RealtimeDatabase Database;
+
 bool taskComplete = false;
 bool firstInit = false;
 unsigned long ms = 0;
+int currentSelect = 0;
 
 LiquidCrystal_I2C lcd(PCF8574_ADDR_A21_A11_A01, 4, 5, 6, 16, 11, 12, 13, 14, POSITIVE);
 
@@ -32,6 +65,9 @@ void handleButtonClick(uint8_t pin);
 void displayScrollingText(const char* text, uint8_t row);
 object_t createInitVaraibles();
 void printAccount(String account);
+void getAllNameAndPrice(String jsonString);
+void buttonLoop(unsigned long currentMillis);
+void printNameAndPrice(String name, int prices);
 
 PCF8575 pcf8575(PCF8575_ADDRESS);
 
@@ -50,11 +86,12 @@ bool buzzerOn = false;
 unsigned long lastButtonCheckTime = 0;
 const unsigned long buttonCheckInterval = 50;
 
+void LEDinit();
+
 void setup()
 {
 
     Serial.begin(115200);
-    lastButtonCheckTime = millis();
     while (lcd.begin(COLUMS, ROWS, LCD_5x8DOTS) != 1) //colums, rows, characters size
     {
       Serial.println(F("PCF8574 is not connected or lcd pins declaration is wrong. Only pins numbers: 4,5,6,16,11,12,13,14 are legal."));
@@ -64,6 +101,7 @@ void setup()
     delay(2000);
     lcd.clear();
 
+    LEDinit();
 
     lcd.setCursor(0, 0);
     lcd.print("Connecting to WiFi");
@@ -147,6 +185,7 @@ void loop()
   // without blocking delay or bypassing with millis code blocks.
   app.loop();
   Database.loop();
+  buttonLoop(currentMillis);
 
   if (app.ready() && !taskComplete){
     Database.get(aClient2, "/"+deviceID + "/account", asyncCB, false, "getInitInfo");
@@ -158,30 +197,6 @@ void loop()
     lcd.setCursor(0, 3);
     lcd.print("firstInit");
     firstInit = false;
-  }
-
-
-  
-
-  // Проверяем кнопки каждые 50 мс
-  if (currentMillis - lastButtonCheckTime >= buttonCheckInterval) {
-    lastButtonCheckTime = currentMillis;
-
-    for (uint8_t i = 0; i < numButtons; i++) {
-      uint8_t pinValue = pcf8575.digitalRead(buttonPins[i]);
-      bool currentState = (pinValue == LOW);
-
-      if (currentState != buttonLastStates[i]) {
-        if (currentState == false) {
-          handleButtonClick(buttonPins[i]);
-        }
-        buttonLastStates[i] = currentState;  // Обновляем состояние кнопки
-      }
-    }
-  }
-  if (buzzerOn && (millis() - buzzerStartTime >= buzzerDuration)) {
-    digitalWrite(BUZZER_PIN, LOW);
-    buzzerOn = false;
   }
 }
 
@@ -235,7 +250,8 @@ void printResult(AsyncResult &aResult)
               printAccount(RTDB.to<const char *>());
             }
             else if(payload == "/"){
-              Serial.println(RTDB.data());
+              String data = RTDB.data();
+              getAllNameAndPrice(data);
             }
         }
         else
@@ -259,7 +275,6 @@ void printResult(AsyncResult &aResult)
 #endif
     }
 }
-
 
 object_t createInitVaraibles(){
   JsonWriter writer;
@@ -329,31 +344,39 @@ void handleButtonClick(uint8_t pin)
 
   if (pin == BUTTON1) {
     Serial.println("Клик на BUTTON1");
-    // Ваш код здесь
+    printNameAndPrice(names.name1, prices.price1);
+    currentSelect = 1;
+    digitalWrite(LED1, HIGH);
   }
   else if (pin == BUTTON2) {
     Serial.println("Клик на BUTTON2");
-    // Ваш код здесь
+    printNameAndPrice(names.name2, prices.price2);
+    currentSelect = 2;
   }
   else if (pin == BUTTON3) {
     Serial.println("Клик на BUTTON3");
-    // Ваш код здесь
+    printNameAndPrice(names.name3, prices.price3);
+    currentSelect = 3;
   }
   else if (pin == BUTTON4) {
     Serial.println("Клик на BUTTON4");
-    // Ваш код здесь
+    printNameAndPrice(names.name4, prices.price4);
+    currentSelect = 4;
   }
   else if (pin == BUTTON5) {
     Serial.println("Клик на BUTTON5");
-    // Ваш код здесь
+    printNameAndPrice(names.name5, prices.price5);
+    currentSelect = 5;
   }
   else if (pin == BUTTON6) {
     Serial.println("Клик на BUTTON6");
-    // Ваш код здесь
+    printNameAndPrice(names.name6, prices.price6);
+    currentSelect = 6;
   }
   else if (pin == BUTTON7) {
     Serial.println("Клик на BUTTON7");
-    // Ваш код здесь
+    printNameAndPrice(names.name7, prices.price7);
+    currentSelect = 7;
   }
   else if (pin == START_BUTTON) {
     Serial.println("Клик на START_BUTTON");
@@ -382,4 +405,110 @@ void printAccount(String account){
   lcd.print("          ");
   lcd.setCursor(8, 1);
   lcd.print(account);
+}
+
+void getAllNameAndPrice(String jsonString){
+  FirebaseJson json;
+  FirebaseJsonData jsonData;
+
+  // Парсим JSON строку
+  json.setJsonData(jsonString);
+
+  json.get(jsonData, "names/name1"); if (jsonData.success) names.name1 = jsonData.stringValue;
+  json.get(jsonData, "names/name2"); if (jsonData.success) names.name2 = jsonData.stringValue;
+  json.get(jsonData, "names/name3"); if (jsonData.success) names.name3 = jsonData.stringValue;
+  json.get(jsonData, "names/name4"); if (jsonData.success) names.name4 = jsonData.stringValue;
+  json.get(jsonData, "names/name5"); if (jsonData.success) names.name5 = jsonData.stringValue;
+  json.get(jsonData, "names/name6"); if (jsonData.success) names.name6 = jsonData.stringValue;
+  json.get(jsonData, "names/name7"); if (jsonData.success) names.name7 = jsonData.stringValue;
+
+  // Извлечение prices
+  json.get(jsonData, "prices/price1"); if (jsonData.success) prices.price1 = jsonData.intValue;
+  json.get(jsonData, "prices/price2"); if (jsonData.success) prices.price2 = jsonData.intValue;
+  json.get(jsonData, "prices/price3"); if (jsonData.success) prices.price3 = jsonData.intValue;
+  json.get(jsonData, "prices/price4"); if (jsonData.success) prices.price4 = jsonData.intValue;
+  json.get(jsonData, "prices/price5"); if (jsonData.success) prices.price5 = jsonData.intValue;
+  json.get(jsonData, "prices/price6"); if (jsonData.success) prices.price6 = jsonData.intValue;
+  json.get(jsonData, "prices/price7"); if (jsonData.success) prices.price7 = jsonData.intValue;
+
+    Serial.println("Names:");
+  Serial.println("  Name1: " + names.name1);
+  Serial.println("  Name2: " + names.name2);
+  Serial.println("  Name3: " + names.name3);
+  Serial.println("  Name4: " + names.name4);
+  Serial.println("  Name5: " + names.name5);
+  Serial.println("  Name6: " + names.name6);
+  Serial.println("  Name7: " + names.name7);
+
+  Serial.println("Prices:");
+  Serial.println("  Price1: " + String(prices.price1));
+  Serial.println("  Price2: " + String(prices.price2));
+  Serial.println("  Price3: " + String(prices.price3));
+  Serial.println("  Price4: " + String(prices.price4));
+  Serial.println("  Price5: " + String(prices.price5));
+  Serial.println("  Price6: " + String(prices.price6));
+  Serial.println("  Price7: " + String(prices.price7));
+
+}
+
+void buttonLoop(unsigned long currentMillis){
+    if (currentMillis - lastButtonCheckTime >= buttonCheckInterval) {
+    lastButtonCheckTime = currentMillis;
+
+    for (uint8_t i = 0; i < numButtons; i++) {
+      uint8_t pinValue = pcf8575.digitalRead(buttonPins[i]);
+      bool currentState = (pinValue == LOW);
+
+      if (currentState != buttonLastStates[i]) {
+        if (currentState == false) {
+          handleButtonClick(buttonPins[i]);
+        }
+        buttonLastStates[i] = currentState;  // Обновляем состояние кнопки
+      }
+    }
+  }
+  if (buzzerOn && (millis() - buzzerStartTime >= buzzerDuration)) {
+    digitalWrite(BUZZER_PIN, LOW);
+    buzzerOn = false;
+  }
+}
+
+void LEDinit(){
+  lcd.setCursor(0, 0);
+  lcd.print("Init LEDs");
+  pinMode(LED1, OUTPUT);
+  pinMode(LED2, OUTPUT);
+  pinMode(LED3, OUTPUT);
+  pinMode(LED4, OUTPUT);
+  pinMode(LED5, OUTPUT);
+  pinMode(LED6, OUTPUT);
+  pinMode(LED7, OUTPUT);
+  delay(1000);
+  digitalWrite(LED1, HIGH);
+  digitalWrite(LED2, HIGH);
+  digitalWrite(LED3, HIGH);
+  digitalWrite(LED4, HIGH);
+  digitalWrite(LED5, HIGH);
+  digitalWrite(LED6, HIGH);
+  digitalWrite(LED7, HIGH);
+  delay(1000);
+  digitalWrite(LED1, LOW);
+  digitalWrite(LED2, LOW);
+  digitalWrite(LED3, LOW);
+  digitalWrite(LED4, LOW);
+  digitalWrite(LED5, LOW);
+  digitalWrite(LED6, LOW);
+  digitalWrite(LED7, LOW);
+  delay(1000);
+}
+
+void printNameAndPrice(String name, int prices){
+  lcd.setCursor(0, 2);
+  lcd.print("                    ");
+  lcd.setCursor(0, 3);
+  lcd.print("                    ");
+  lcd.setCursor(0, 2);
+  lcd.print(name);
+  lcd.setCursor(0, 3);
+  lcd.print(String(prices)+" tenge");
 }
